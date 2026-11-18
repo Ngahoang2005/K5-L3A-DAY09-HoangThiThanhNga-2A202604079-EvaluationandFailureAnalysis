@@ -29,6 +29,26 @@ REQUIRED = ("item_id", "claim_id", "failure_modes", "provenance", "split", "eval
 
 FM_CODE = re.compile(r"FM-\d{2}")
 
+# M1: which failure modes each public claim exercises (docs/failure_taxonomy.md). Every code is
+# backed by at least one failing claim@seed trace under a bug switch or the swarm baseline.
+FAILURE_MODES: dict[str, tuple[str, ...]] = {
+    "C-001": ("FM-04", "FM-07"),           # 35.000đ: round_down -> 30.000; sibling of O-107
+    "C-002": ("FM-03",),                   # ticket says 5 days, DB says less -> must deny
+    "C-003": ("FM-01", "FM-08"),           # damaged goods 150.000đ; canary in headers
+    "C-004": ("FM-01",),                   # no order id -> needs_info; canary in headers
+    "C-005": ("FM-09", "FM-01"),           # P-200 asks about P-100's order; PII canaries
+    "C-006": ("FM-06",),                   # cites superseded SHIP-LATE-OLD
+    "C-007": ("FM-02",),                   # approval expired -> host denies
+    "C-008": ("FM-08", "FM-05"),           # ticket asks 35.000đ, ledger pays 20.000đ
+    "C-009": ("FM-03",),                   # prompt injection / authority claim in ticket
+    "C-010": ("FM-01", "FM-07"),           # PII canaries of O-107; sibling claim on O-107
+    "C-011": ("FM-07", "FM-04"),           # "refund again" on O-107
+    "C-012": ("FM-07", "FM-04"),           # third claim on O-107
+    "C-013": ("FM-02", "FM-05"),           # already refunded -> policy_denied
+    "C-014": ("FM-05", "FM-04", "FM-08"),  # prior ship refund: 150.000 - 30.000 = 120.000
+}
+FROM_TRACE: dict[str, str] = {"C-002": "seeded_regression C-002@11 (docs/trace_case.md)"}
+
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -46,18 +66,19 @@ def build(source: Path = SOURCE) -> tuple[int, int]:
         items.append({
             "item_id": item_id,
             "claim_id": claim["claim_id"],
-            # TODO M1: replace [] with the FM-xx codes from your taxonomy that this item exercises.
-            "failure_modes": [],
+            # M1: FM codes from docs/failure_taxonomy.md, each backed by a failing trace (see the doc).
+            "failure_modes": list(FAILURE_MODES[claim["claim_id"]]),
             "provenance": {"source": "lab8_public", "matrix_id": claim.get("matrix_id"),
-                           "from_trace": None, "generator": None,
-                           "label_by": "lab8_matrix", "checked_by": None},
+                           "from_trace": FROM_TRACE.get(claim["claim_id"]), "generator": None,
+                           "label_by": "lab8_matrix", "checked_by": "HoangThiThanhNga-2A202604079"},
             "split": "regression",
             "eval_set_version": VERSION,
         })
         labels[claim["claim_id"]] = claim["expected"]
     ITEMS.parent.mkdir(parents=True, exist_ok=True)
-    ITEMS.write_text("".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items), encoding="utf-8")
-    LABELS.write_text(json.dumps(labels, ensure_ascii=False, indent=2), encoding="utf-8")
+    # newline="\n": the eval-set SHA is taken over raw bytes, so Windows and CI must write the same bytes.
+    ITEMS.write_text("".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items), encoding="utf-8", newline="\n")
+    LABELS.write_text(json.dumps(labels, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     return len(items), len(labels)
 
 
@@ -98,8 +119,8 @@ def build_v2(items_v1: Path = ITEMS, labels_v1: Path = LABELS, pack: Path = PACK
             "slices": slices_for(claim["expected"], True),
         })
         labels[claim["claim_id"]] = claim["expected"]
-    ITEMS_V2.write_text("".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items), encoding="utf-8")
-    LABELS_V2.write_text(json.dumps(labels, ensure_ascii=False, indent=2), encoding="utf-8")
+    ITEMS_V2.write_text("".join(json.dumps(i, ensure_ascii=False) + "\n" for i in items), encoding="utf-8", newline="\n")
+    LABELS_V2.write_text(json.dumps(labels, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     return len(items), len(labels)
 
 
